@@ -33,8 +33,9 @@ services:
       JWT_SECRET: ${JWT_SECRET:-spare-croston-development-only}
       SEED_DEMO: ${SEED_DEMO:-true}
       ARTIFACT_DIR: /artifacts
+      ARCHIVE_KEY_DIR: /archive-keys
     ports: ["${BACKEND_PORT:-19214}:8000"]
-    volumes: ["analysis-artifacts:/artifacts"]
+    volumes: ["analysis-artifacts:/artifacts","analysis-keys:/archive-keys"]
     depends_on:
       db: {condition: service_healthy}
       redis: {condition: service_healthy}
@@ -49,7 +50,7 @@ services:
     container_name: ${COMPOSE_PROJECT_NAME:-spare-croston}-worker
     command: ["python", "-m", "src.worker"]
     environment: *app-env
-    volumes: ["analysis-artifacts:/artifacts"]
+    volumes: ["analysis-artifacts:/artifacts","analysis-keys:/archive-keys"]
     depends_on:
       db: {condition: service_healthy}
       redis: {condition: service_healthy}
@@ -74,3 +75,4 @@ volumes:
   db-data:
   redis-data:
   analysis-artifacts:
+  analysis-keys:

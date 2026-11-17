@@ -4,6 +4,7 @@
 
 ## 模块与业务流程
 数据接入（JSON/CSV、字段验证、批次指纹）→ 参数化分析（异步 Python worker）→ 结果复核（指标、图形、明细、解释、批准）→ 定时分发（本地收件箱、CSV/JSON、SHA256）；另有业务总览和审计轨迹。
+分发归档使用 AES-256-GCM 静态加密，密钥由业务负责人管理并可轮换：密钥文件存放在与归档目录分离的 `analysis-keys` 卷，数据库只记录版本、状态和指纹。轮换期间继续分发和下载，存量归档（含旧明文）后台逐份换密，失败项保留原可读版本，中断恢复后只处理未完项。全部分换密且无在途读写后旧密钥才可退役，退役时删除密钥文件，原密文不可解读。页面可查待迁移、迁移中、失败、完成和每份归档的密钥归属；分析员与观察员只能查看，不能轮换。
 三个贯穿全栈的实体：Dataset 数据批次、Job 分析任务、Report 分发计划；辅助 User、Audit、Delivery。
 
 ## 快速启动
@@ -18,13 +19,13 @@ docker compose exec -T backend python -m scripts.seed_demo
 ## 演示账号与权限
 |账号|密码|真实权限|
 |---|---|---|
-|admin@demo.local|Demo123!|接入、执行、批准、分发、暂停、读取与下载|
-|analyst@demo.local|Demo123!|接入、执行、读取与下载；不能批准或安排分发|
-|viewer@demo.local|Demo123!|只读与下载|
+|admin@demo.local|Demo123!|接入、执行、批准、分发、暂停、读取与下载、归档密钥轮换与退役|
+|analyst@demo.local|Demo123!|接入、执行、读取与下载；不能批准、安排分发或轮换归档密钥|
+|viewer@demo.local|Demo123!|只读与下载；不能轮换归档密钥|
 
 ## 技术与本地开发
 Python 3.12 / FastAPI / SQLAlchemy / NumPy / SciPy / scikit-learn；PostgreSQL 16；Redis 7；Nginx；原生 HTML CSS JavaScript ES modules（用户指定）。后端所有校验、持久化和算法在服务端。无前端打包步骤。
-后端：安装 backend/requirements.txt，设置 DATABASE_URL、REDIS_URL、JWT_SECRET、ARTIFACT_DIR 后在 backend/ 执行 `python -m migrations.initial`、`python -m scripts.seed_demo`、`uvicorn src.main:app`，另开 `python -m src.worker`。前端使用带 /api 反向代理的 Nginx，直接打开 index.html 不支持 API。
+后端：安装 backend/requirements.txt，设置 DATABASE_URL、REDIS_URL、JWT_SECRET、ARTIFACT_DIR、ARCHIVE_KEY_DIR 后在 backend/ 执行 `python -m migrations.initial`、`python -m scripts.seed_demo`、`uvicorn src.main:app`，另开 `python -m src.worker`。前端使用带 /api 反向代理的 Nginx，直接打开 index.html 不支持 API。
 
 ## 目录与工程约定
 backend/src/{models,schemas,services,routes,controllers,middlewares,constants,config,utils}；backend/scripts/seed_demo.py；backend/migrations/initial.py。
@@ -32,7 +33,7 @@ frontend/src/{api,stores,types,components/common,hooks,pages,router,utils,consta
 Role 枚举：admin/analyst/viewer；JobStatus：queued/running/completed/failed。后端 backend/src/constants/enums.py，前端 frontend/src/constants/enums.js；路由权限在 middlewares/auth.py；页面按相同角色控制操作入口。
 
 ## 环境变量与 Docker
-COMPOSE_PROJECT_NAME=spare-croston；FRONTEND_PORT=18214；BACKEND_PORT=19214；DB_PORT=17714；DB_PASSWORD、JWT_SECRET 见 .env.example；SEED_DEMO 默认 true。共享命名产物卷供后端下载与 worker 写入，数据库/Redis 各持久卷。
+COMPOSE_PROJECT_NAME=spare-croston；FRONTEND_PORT=18214；BACKEND_PORT=19214；DB_PORT=17714；DB_PASSWORD、JWT_SECRET 见 .env.example；SEED_DEMO 默认 true。共享命名产物卷供后端下载与 worker 写入，另设独立命名密钥卷 `/archive-keys` 保存归档加密密钥；数据库/Redis 各持久卷。生产部署应把密钥卷替换为外部密钥服务或受控挂载，并配置独立备份策略。
 恰好五服务均有健康检查。Redis 队列加 SQL 排队状态兜底；worker 按 next_run 生成本地收件箱文件。周期 60 秒至 30 天。分发结果为批准分析的固定快照；若需新数据重新计算并建立新计划。当前不连接邮件或企业聊天。
 错误响应、请求编号、Redis 每 IP 每分钟 240 次限流、JWT 和数据库操作审计。演示密钥与密码仅供本机模拟；生产部署前配置独立密钥与账号。
 

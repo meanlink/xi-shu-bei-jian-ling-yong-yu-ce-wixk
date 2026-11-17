@@ -9,10 +9,12 @@ from src.config.settings import REDIS_URL
 from src.middlewares.requests import RequestControl
 from src.routes import auth, datasets, jobs, reports
 from src.controllers import catalog
+from src.services import archive
 from migrations.initial import migrate
 @asynccontextmanager
 async def lifespan(app):
     migrate()
+    archive.ensure_active()
     if os.getenv('SEED_DEMO','true').lower()=='true':
         try:
             from scripts.seed_demo import seed
